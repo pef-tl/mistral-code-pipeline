@@ -25,14 +25,21 @@ from worker.agents.definitions import (
 
 def _content_text(content: Any) -> str:
     """Contenu d'un message Mistral en texte brut : `str` ou liste de blocs
-    (`thinking`, `text`, ...). Seuls les blocs `text` sont gardés."""
+    (`thinking`, `text`, ...) — blocs en dicts OU objets SDK (TextChunk).
+    Seuls les blocs `text` sont gardés."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(
-            block.get("text", "") for block in content
-            if isinstance(block, dict) and block.get("type") == "text"
-        )
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            elif getattr(block, "type", None) == "text":
+                text = getattr(block, "text", None)
+                if text:
+                    parts.append(text)
+        return "\n".join(parts)
     return str(content) if content is not None else ""
 
 

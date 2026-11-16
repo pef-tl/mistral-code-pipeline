@@ -115,6 +115,17 @@ def test_extract_json():
         _extract_json("")
 
 
+def test_content_text_handles_sdk_objects_and_dicts():
+    from mistralai.client.models.textchunk import TextChunk
+    from worker.agents.run_agent import _content_text
+    assert _content_text("hello") == "hello"
+    assert _content_text([{"type": "text", "text": "a"}, {"type": "thinking", "thinking": "x"}]) == "a"
+    # blocs objets SDK (TextChunk) — le vrai format renvoyé par l'API
+    assert _content_text([TextChunk(type="text", text="b")]) == "b"
+    assert _content_text([]) == ""
+    assert _content_text(None) == ""
+
+
 def test_change_request_defaults():
     from worker.workflows.change_to_mr import ChangeRequest
     req = ChangeRequest(request="x")
