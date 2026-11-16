@@ -1,0 +1,47 @@
+# Image du worker pour deploiement MANAGE Mistral Cloud (build depuis ce repo
+# GitHub, via l'app GitHub Mistral). Le CMD doit lancer le worker : aucune cle
+# API dans l'image, le token de service account est monte par la plateforme
+# (MISTRAL_SA_TOKEN_PATH).
+#
+# Variables d'environnement du pipeline (convention MINUSCULES, toutes
+# optionnelles sauf le token GitLab pour le mode repo distant) :
+#   gitlab_token       - PAT GitLab (scopes read_repository, write_repository,
+#                        api) : git over HTTPS (Basic auth) + API REST (Bearer).
+#                        En manage : binder le secret workspace `gitlab_token`
+#                        -> env GITLAB_TOKEN.
+#   pipeline_workspace - dossier de clone des repos cibles (defaut /tmp/...).
+#   pipeline_base_branch / pipeline_test_cmd - overrides de detection auto.
+#
+# Si le GitLab cible utilise une CA privee : copier le certificat ici, ex.
+#   COPY corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
+#   RUN update-ca-certificates
+
+FROM python:3.12-slim
+
+# git (clone/push HTTPS des repos cibles, auth PAT) + certificats + curl/xz
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates curl xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 + npm - les tests du front Angular (toollive-c8y, Jest) tournent
+# dans le worker. Tarball officiel, arch-aware (amd64/arm64).
+ARG NODE_VERSION=v20.19.3
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) node_arch=x64 ;; arm64) node_arch=arm64 ;; *) echo "arch $arch non supportee" >&2; exit 1 ;; esac; \
+    curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-${node_arch}.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1; \
+    node --version; npm --version
+
+# uv (repos Python cibles : uv sync / uv run pytest)
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY apps/worker/src ./apps/worker/src
+RUN uv pip install --system .
+
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "worker.entrypoints.worker"]
