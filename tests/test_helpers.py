@@ -130,6 +130,6 @@ def test_change_request_defaults():
     from worker.workflows.change_to_mr import ChangeRequest
     req = ChangeRequest(request="x")
     assert "toollive-c8y" in req.repo
-    assert req.max_iterations == 5
+    assert req.max_iterations is None  # défaut : aucune limite
     assert req.dry_run is False
     json.dumps(req.model_dump())  # sérialisable (entrée du workflow)

@@ -19,8 +19,9 @@ humaine. Jamais de merge automatique.
    son NOM passe (`agent_runner.run_agent_activity`). Ne PAS utiliser les durable
    agents (`Agent`/`Runner` du plugin workflows) : dépréciés. Client LLM :
    `get_mistral_client()` (jamais `Mistral(api_key=...)` à la main).
-3. **Boucles bornées** : `MAX_DEV_ITERATIONS = 5` (dev→tests→review),
-   `MAX_AGENT_TURNS = 20`, `MAX_AGENT_SECONDS = 15 min`. Jamais de boucle infinie.
+3. **Boucle dev/tests sans plafond** : `max_iterations=None` par défaut (illimité,
+   bornée par le timeout d'exécution du workflow, 8h) ; `MAX_AGENT_TURNS = 20`,
+   `MAX_AGENT_SECONDS = 15 min` bornent chaque boucle d'agent.
 4. **Tools confinés** : shell/fichiers des agents bornés au workspace (pas de
    path traversal, pas de `sudo`, pas de `git push`).
 5. **MR = gate humaine** : le workflow pousse `feat/...` et ouvre la MR GitLab,

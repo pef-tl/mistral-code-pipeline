@@ -5,10 +5,11 @@ Déroulement :
     1. SPEC       — l'entrée `request` est la demande du développeur (ce qu'il
                     veut faire, en langage naturel).
     2. PLAN       — agent planner : analyse le repo cloné et produit un plan.
-    3. BOUCLE     — itérations bornées entre agents : dev (implémente/corrige)
-                    -> tests (gate déterministe) -> reviewer (verdict JSON).
-                    La boucle s'arrête quand les tests passent ET que le
-                    reviewer approuve, ou à `max_iterations`.
+    3. BOUCLE     — itérations entre agents SANS plafond par défaut : dev
+                    (implémente/corrige) -> tests (gate déterministe) ->
+                    reviewer (verdict JSON). La boucle s'arrête quand les tests
+                    passent ET que le reviewer approuve ; `max_iterations` (None
+                    par défaut = illimité) n'est qu'un plafond optionnel.
     4. MR         — push de la branche `feat/...` et ouverture d'une Merge
                     Request GitLab pour validation humaine (jamais de merge
                     automatique).
@@ -29,8 +30,6 @@ from pydantic import BaseModel, Field
 
 import mistralai.workflows as workflows
 from mistralai.workflows import workflow as wf
-
-from worker.agents.definitions import MAX_DEV_ITERATIONS
 
 with wf.unsafe.imports_passed_through():
     from worker.activities import agent_runner, git_tools, test_runner
@@ -54,8 +53,11 @@ class ChangeRequest(BaseModel):
                               "(défaut : auto-détection develop/main/master).")
     test_cmd: str = Field(default="", description="Commande de test override "
                            "(défaut : auto-détection selon la stack du repo).")
-    max_iterations: int = Field(default=MAX_DEV_ITERATIONS, ge=1, le=20,
-                                description="Borne de la boucle dev -> tests -> review.")
+    max_iterations: int | None = Field(default=None, ge=1,
+                                       description="Plafond de la boucle dev -> tests -> review. "
+                                                   "None (défaut) = AUCUNE limite : la boucle tourne jusqu'à "
+                                                   "convergence (tests OK + reviewer OK), bornée seulement "
+                                                   "par le timeout d'exécution du workflow.")
     dry_run: bool = Field(default=False,
                           description="Si true : tout sauf push + MR (pas d'effet de bord "
                                       "sur le forge).")
@@ -91,7 +93,7 @@ def _extract_json(text: str) -> dict:
     name="change-to-mr",
     workflow_display_name="Change request → Dev/Test loop → MR",
     workflow_description="Demande développeur -> plan -> itérations dev/tests entre "
-                         "agents (bornées) -> Merge Request GitLab pour validation humaine.",
+                         "agents (sans plafond par défaut) -> Merge Request GitLab pour validation humaine.",
     execution_timeout=EXECUTION_TIMEOUT,
 )
 class ChangeToMr:
@@ -138,8 +140,13 @@ class ChangeToMr:
                    f"Base branch: {base}. You are on branch {branch}. "
                    "Implement the change now.")
         reports: list[dict] = []
-        status = "max_iterations_reached"
-        for i in range(1, input.max_iterations + 1):
+        status = "ready_for_review"
+        i = 0
+        while True:
+            i += 1
+            if input.max_iterations is not None and i > input.max_iterations:
+                status = "max_iterations_reached"
+                break
             self.iteration = i
 
             self.phase = f"dev:{i}"
@@ -175,7 +182,6 @@ class ChangeToMr:
             reports.append(report)
 
             if tests["passed"] and verdict.get("approve") is True:
-                status = "ready_for_review"
                 break
 
             findings = verdict.get("findings") or []

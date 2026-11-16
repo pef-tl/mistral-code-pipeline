@@ -121,6 +121,22 @@ async def test_boucle_jusqu_a_approbation(temporal_env_with_converter, tmp_path,
     assert [r["verdict"]["approve"] for r in result["iterations"]] == [False, False, True]
 
 
+async def test_sans_plafond_illimite_par_defaut(temporal_env_with_converter, tmp_path, monkeypatch):
+    """max_iterations=None (défaut) : la boucle continue au-delà de toute borne
+    jusqu'à convergence (ici 3 itérations avant approve)."""
+    repo = make_repo(tmp_path)
+    mock_agents(monkeypatch, reviewer_verdicts=[False, False, True])
+
+    result = await run_workflow(
+        temporal_env_with_converter,
+        ChangeRequest(request="évolution longue", repo=repo, dry_run=True),  # max_iterations=None
+        "exec-unbounded-1",
+    )
+
+    assert result["status"] == "ready_for_review"
+    assert len(result["iterations"]) == 3
+
+
 async def test_max_iterations_atteint(temporal_env_with_converter, tmp_path, monkeypatch):
     repo = make_repo(tmp_path)
     mock_agents(monkeypatch, reviewer_verdicts=[False], tests_pass=False)
